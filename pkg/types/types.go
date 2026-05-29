@@ -198,6 +198,10 @@ type FindingResult struct {
 	Frameworks []FrameworkRef `json:"frameworks"`
 	// RemediationPlain is a plain-language remediation suggestion.
 	RemediationPlain string `json:"remediation_plain"`
+	// MiceliumProducts lists the Micelium product names that address this finding.
+	// Populated from the matched FindingRule's MiceliumProducts field.
+	// Non-empty means the 1.2× alignment bonus is applied in what-to-fix-first ordering.
+	MiceliumProducts []string `json:"micelium_products,omitempty"`
 }
 
 // ExplainStep is one term in the explainability trace for a domain's "Why?" panel.

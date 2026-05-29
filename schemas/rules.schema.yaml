@@ -1,0 +1,108 @@
+# rules.schema.yaml
+# Schema definition for Lumen finding rule YAML files.
+#
+# Rule files live in qwen-web/lumen/content/rules/<RULE_ID>.yaml (one rule per file).
+# They are authored by security engineers and validated by `lumen-lint --rules <dir>`.
+#
+# Field names here match the yaml struct tags in pkg/rules/rule.go (FindingRule).
+# Any drift between this schema and the Go struct tags is a bug; the Go tags are
+# the authoritative source of truth.
+#
+# lumen-lint enforces: id, domain, severity, default_weight, and title are all required.
+# default_weight must satisfy: 0 < weight <= 1.0.
+#
+# Version: 1
+
+---
+# id (required, unique across all rule files)
+# Stable rule identifier in SCREAMING_SNAKE_CASE. Example: AIGOV_NO_AUP
+id: <string>
+
+# domain (required)
+# The scoring domain this rule contributes to.
+# Valid values: vulnerabilities | compliance | ai_governance | security_posture | privacy
+domain: <string>
+
+# severity (required)
+# The base severity level of this finding.
+# Valid values: critical | high | medium | low
+# Numeric severity factors (used in scoring math):
+#   critical -> 1.0   high -> 0.8   medium -> 0.5   low -> 0.25
+severity: <string>
+
+# default_weight (required)
+# The base contribution weight before industry overlay multiplication.
+# Must satisfy: 0 < default_weight <= 1.0
+# A critical finding with default_weight=1.0 produces contribution=1.0 (domain loss cap).
+default_weight: <float>
+
+# detect (optional; a rule with no detect conditions never fires automatically)
+detect:
+  # questionnaire (optional)
+  # List of questionnaire conditions; each is "<QuestionID> == <answer_value>".
+  # Only the == operator is supported for questionnaire conditions in v1.
+  # A rule fires if ANY condition in this list matches (OR semantics within list).
+  questionnaire:
+    - "<Q-ID> == <answer_value>"
+
+  # scanner (optional)
+  # List of scanner probe conditions; each is "<domain>.<field> <op> <literal>".
+  # Supported domains: vulnerabilities | compliance | ai_governance | security_posture | privacy
+  # Supported operators: == | != | > | < | >= | <=
+  # Field names map to json tags on ScannerFindings sub-structs in pkg/types/types.go.
+  # Example: "ai_governance.shadow_ai_apps_count > 2"
+  # Example: "compliance.mfa_enabled == false"
+  scanner:
+    - "<domain>.<field> <op> <literal>"
+
+# title (required)
+# Short human-readable rule title shown in the UI and PDF report.
+title: <string>
+
+# description_short (optional)
+# One-sentence summary of the risk. Used in compact report views.
+description_short: <string>
+
+# description_long (optional)
+# Full technical description of the risk and its business impact.
+description_long: <string>
+
+# frameworks (optional)
+# Compliance and regulatory framework references triggered by this finding.
+# The `id` field uses the canonical citation format; see existing rules for examples.
+frameworks:
+  - id: <string>    # e.g. "EU AI Act Art. 26" or "NIST AI RMF GOVERN-1.1"
+    text: <string>  # short description of the control or obligation
+
+# micelium_product (optional)
+# YAML key is `micelium_product` (singular); maps to MiceliumProducts []MiceliumProductRef
+# in the Go struct. Do NOT use `micelium_products` (plural) — that key is not parsed.
+micelium_product:
+  - product: <string>  # Micelium product name, e.g. "Sigil" or "Sense"
+    role: <string>     # How this product addresses the finding
+
+# industry_overlays (optional)
+# Per-industry weight multipliers. The special key "default" is the fallback.
+# If no entry exists for the assessed industry and no "default" entry, 1.0 is used.
+industry_overlays:
+  <industry_id>:
+    weight_multiplier: <float>   # 1.0 = no change; >1.0 = more severe in this industry
+  default:
+    weight_multiplier: <float>
+
+# remediation_plain (optional)
+# Plain-language remediation suggestion shown to non-technical users.
+remediation_plain: <string>
+
+# remediation_technical (optional)
+# Technical remediation guidance for security engineers and IT administrators.
+remediation_technical: <string>
+
+# --- NOTES ---
+# Fields NOT in the current v1 struct (do not include in rule files):
+#   - size_descriptor_overrides  (planned for v1.1)
+#   - benchmark_blurb_placeholder_v1  (planned for v1.1)
+# Including unrecognised fields is silently ignored by the YAML parser but linted
+# at INFO level in --strict mode.
+
+# --- end of schema ---

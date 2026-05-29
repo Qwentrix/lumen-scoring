@@ -135,6 +135,14 @@ func (e *Engine) evaluateRules(
 		frameworks := make([]types.FrameworkRef, len(rule.Frameworks))
 		copy(frameworks, rule.Frameworks)
 
+		// Collect Micelium product names for the alignment bonus in buildRemediations.
+		var miceliumProducts []string
+		for _, p := range rule.MiceliumProducts {
+			if p.Product != "" {
+				miceliumProducts = append(miceliumProducts, p.Product)
+			}
+		}
+
 		triggered[rule.ID] = types.FindingResult{
 			RuleID:             rule.ID,
 			Domain:             rule.Domain,
@@ -147,6 +155,7 @@ func (e *Engine) evaluateRules(
 			TriggeredBy:        triggeredBy,
 			Frameworks:         frameworks,
 			RemediationPlain:   rule.RemediationPlain,
+			MiceliumProducts:   miceliumProducts,
 		}
 		_ = overlay // overlay is already consumed via rule.IndustryMultiplier above
 	}
@@ -267,14 +276,36 @@ func computeOverallScore(
 	return int(math.Round(weightedSum / totalWeight))
 }
 
+// alignmentBonus returns 1.2 if the finding references any Micelium product, else 1.0.
+// Used by buildRemediations to weight the what-to-fix-first ordering per design §7.
+func alignmentBonus(f types.FindingResult) float64 {
+	if len(f.MiceliumProducts) > 0 {
+		return 1.2
+	}
+	return 1.0
+}
+
 // buildRemediations constructs the top-N "what to fix first" remediation list.
 // Deduplicates by plain-text remediation content; applies a 1.2× alignment bonus
-// for findings that reference any Micelium product.
+// for findings that reference any Micelium product (design §7: sort by
+// contribution × alignmentBonus before selecting top-N).
 func buildRemediations(findings []types.FindingResult, topN int) []types.Remediation {
+	// Sort by contribution × alignmentBonus descending (stable to preserve RuleID tie-break).
+	sorted := make([]types.FindingResult, len(findings))
+	copy(sorted, findings)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		wi := sorted[i].Contribution * alignmentBonus(sorted[i])
+		wj := sorted[j].Contribution * alignmentBonus(sorted[j])
+		if wi != wj {
+			return wi > wj
+		}
+		return sorted[i].RuleID < sorted[j].RuleID
+	})
+
 	seen := make(map[string]bool)
 	result := make([]types.Remediation, 0, topN)
 
-	for i, f := range findings {
+	for _, f := range sorted {
 		if len(result) >= topN {
 			break
 		}
@@ -291,7 +322,7 @@ func buildRemediations(findings []types.FindingResult, topN int) []types.Remedia
 			RuleID:           f.RuleID,
 			Title:            f.Title,
 			Domain:           f.Domain,
-			Priority:         i + 1,
+			Priority:         len(result) + 1,
 			RemediationPlain: f.RemediationPlain,
 			Contribution:     f.Contribution,
 		})
@@ -356,22 +387,46 @@ func domainPlainSummary(domain types.DomainID, grade string, findingsCount int) 
 
 // frameworkFamily extracts a short family label from a framework citation ID.
 // e.g. "EU AI Act Art. 26" -> "EU AI Act"
+// e.g. "NIST CSF RS.MI-3"  -> "NIST CSF"
 // e.g. "HIPAA 164.312(a)(1)" -> "HIPAA"
 // Falls back to the full ID if no space is found.
 func frameworkFamily(id string) string {
 	for i, ch := range id {
 		if ch == ' ' {
-			// Trim to the first meaningful word boundary.
-			// Special case: keep "EU AI Act" as a 3-word family.
 			prefix := id[:i]
-			if prefix == "EU" || prefix == "NIST" {
-				// Extend to next word.
+			switch prefix {
+			case "NIST":
+				// Extend one more word: "NIST CSF", "NIST SP", "NIST AI".
 				rest := id[i+1:]
 				for j, c := range rest {
 					if c == ' ' {
 						return id[:i+1+j]
 					}
 				}
+				// Only two tokens total (e.g. "NIST CSF") — return the whole string.
+				return id
+			case "EU":
+				// Extend TWO more words to reach "EU AI Act".
+				rest := id[i+1:]
+				firstSpace := -1
+				for j, c := range rest {
+					if c == ' ' {
+						firstSpace = j
+						break
+					}
+				}
+				if firstSpace < 0 {
+					// Only "EU <word>", no second extension possible.
+					return id
+				}
+				rest2 := rest[firstSpace+1:]
+				for j, c := range rest2 {
+					if c == ' ' {
+						return id[:i+1+firstSpace+1+j]
+					}
+				}
+				// Three tokens total (e.g. "EU AI Act") — return everything so far.
+				return id[:i+1+firstSpace+1+len(rest2)]
 			}
 			return prefix
 		}

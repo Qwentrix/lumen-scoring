@@ -1,0 +1,63 @@
+# overlays.schema.yaml
+# Schema definition for Lumen industry overlay YAML files.
+#
+# Overlay files live in qwen-web/lumen/content/overlays/<industry_id>.yaml.
+# They are authored by the product team and validated by `lumen-lint --overlays <dir>`.
+#
+# Field names here match the yaml struct tags in pkg/rules/overlay.go (IndustryOverlay).
+# Any drift between this schema and the Go struct tags is a bug; the Go tags are
+# the authoritative source of truth.
+#
+# lumen-lint enforces: id and display_name are required.
+# domain_weight_multipliers are optional; any omitted domain uses a 1.0 multiplier
+# (the nonZero() guard in DomainMultiplier() enforces this at runtime).
+#
+# Version: 1
+
+---
+# id (required, unique across all overlay files)
+# Industry identifier. Must match the industry IDs used in ScoringInput.Industry and
+# in rule industry_overlays keys. Use lowercase snake_case.
+# Canonical 10 IDs for v1:
+#   healthcare | financial | technology | government | education |
+#   manufacturing | energy | retail | legal | it_services
+id: <string>
+
+# display_name (required)
+# Human-readable industry name shown in the UI and PDF report.
+# Example: "Healthcare" or "Financial Services"
+display_name: <string>
+
+# domain_weight_multipliers (optional)
+# Controls how much each domain contributes to the overall weighted-mean score.
+# Omitted domains default to 1.0 at runtime via the nonZero() guard.
+# All values should be > 0; values <= 0 are also treated as 1.0 at runtime.
+domain_weight_multipliers:
+  vulnerabilities: <float>     # e.g. 1.2 for healthcare (high CVE exposure)
+  compliance: <float>          # e.g. 1.5 for healthcare (HIPAA)
+  ai_governance: <float>       # e.g. 1.7 for technology (AI-heavy)
+  security_posture: <float>    # e.g. 1.2 for government
+  privacy: <float>             # e.g. 1.8 for healthcare (PHI sensitivity)
+
+# primary_frameworks (optional)
+# The dominant regulatory/compliance frameworks for this industry.
+# These are informational for the Tier 1 result page and PDF cover.
+# Example: [HIPAA, HITECH, SOC 2]
+primary_frameworks:
+  - <string>
+
+# lead_micelium_products (optional)
+# The Micelium products most relevant for this industry vertical.
+# Used in the PDF's "How Micelium can help" section.
+lead_micelium_products:
+  - product: <string>    # Micelium product name, e.g. "Sense" or "Proof"
+    emphasis: <string>   # Short emphasis description, e.g. "PHI behavioural monitoring"
+
+# --- NOTES ---
+# Fields planned for v1.1 but NOT in the current struct (do not include):
+#   - size_descriptor_overrides      (planned for v1.1)
+#   - benchmark_blurb_placeholder_v1 (planned for v1.1)
+# The lumen-scoring parser will silently ignore these fields if included, but they
+# will have no effect until the struct is extended in a future minor version.
+
+# --- end of schema ---

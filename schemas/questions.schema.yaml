@@ -1,0 +1,78 @@
+# questions.schema.yaml
+# Schema definition for Lumen question YAML files.
+#
+# Question files live in qwen-web/lumen/content/questions/<domain>.yaml.
+# They are authored by content teams and validated by `lumen-lint --questions <dir>`.
+#
+# Field names here are the authoritative yaml tag names consumed by lumen-api (LU-2).
+# lumen-lint enforces: required fields, valid domain values, valid depth_level values,
+# and unique question IDs within a file.
+#
+# Version: 1  (additive changes allowed; breaking changes require schema version bump)
+
+---
+# --- top-level fields ---
+
+# domain (required)
+# One of the five scoring domains.
+# Valid values: vulnerabilities | compliance | ai_governance | security_posture | privacy
+domain: <string>
+
+# version (required)
+# Integer schema version for this question file. Must be > 0.
+version: <int>
+
+# questions (required)
+# List of question entries. Must contain at least one question.
+questions:
+  - # id (required, unique within file)
+    # Stable question identifier. Example: Q-AIGOV-001
+    # Convention: Q-<DOMAIN_PREFIX>-<NNN>
+    id: <string>
+
+    # text (required)
+    # The question text displayed to the user.
+    text: <string>
+
+    # applicable_industries (optional; omit = all industries)
+    # Restricts this question to specific industry IDs.
+    # Example: [healthcare, financial]
+    applicable_industries:
+      - <string>
+
+    # applicable_sizes (optional; omit = all sizes)
+    # Restricts this question to specific company-size buckets.
+    # Valid values: individual | smb | mid | enterprise
+    applicable_sizes:
+      - <string>
+
+    # answer_options (optional)
+    # The ordered list of answer choices presented to the user.
+    answer_options:
+      - value: <string>   # internal answer value used in answer_findings keys
+        label: <string>   # human-readable label shown in the UI
+
+    # answer_findings (optional)
+    # Maps an answer value to the list of rule IDs that fire when that answer is selected.
+    # The rule IDs must exist in the rules/ content directory.
+    # Example:
+    #   no_policy:
+    #     - AIGOV_NO_AUP
+    #   partial_policy:
+    #     - AIGOV_PARTIAL_AUP
+    answer_findings:
+      <answer_value>:
+        - <RULE_ID>
+
+    # depth_level (optional)
+    # Controls when the question is presented in the assessment flow.
+    # Valid values: triage | deepdive
+    # triage   = shown in Tier 1 (anonymous, fast)
+    # deepdive = shown in Tier 2 (post-email-gate, detailed)
+    depth_level: <string>
+
+    # estimated_seconds (optional)
+    # Expected time for a user to answer this question. Used for progress estimation.
+    estimated_seconds: <int>
+
+# --- end of schema ---
