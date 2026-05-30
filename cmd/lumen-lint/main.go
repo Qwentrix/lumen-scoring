@@ -364,8 +364,8 @@ func validateQuestionFile(path string) []string {
 		if q.Text == "" {
 			errs = append(errs, fmt.Sprintf("%s: text: required", prefix))
 		}
-		if q.DepthLevel != "" && q.DepthLevel != "triage" && q.DepthLevel != "deepdive" {
-			errs = append(errs, fmt.Sprintf("%s: depth_level: invalid value %q (must be triage or deepdive)", prefix, q.DepthLevel))
+		if q.DepthLevel != "triage" && q.DepthLevel != "deepdive" {
+			errs = append(errs, fmt.Sprintf("%s: depth_level: required and must be triage or deepdive (got %q)", prefix, q.DepthLevel))
 		}
 	}
 
