@@ -34,6 +34,29 @@ industry_overlays:
 remediation_plain: "Write a one-page acceptable-use policy."
 `
 
+// ruleCloudRootNoMFA is a cloud rule whose only detection is a scanner condition
+// of the form `cloud.* == false`. It exercises the C-1 opt-in guard: it must NOT
+// fire on a normal scan (cloud never scanned) but MUST fire once a provider was
+// actually scanned with root MFA disabled.
+const ruleCloudRootNoMFA = `
+id: CLOUD_ROOT_NO_MFA
+domain: compliance
+severity: critical
+default_weight: 0.9
+detect:
+  scanner:
+    - cloud.root_mfa_enabled == false
+title: "Root account has no MFA"
+description_short: "Cloud root/owner account is missing MFA."
+frameworks:
+  - id: "CIS AWS 1.5"
+    text: "Ensure MFA is enabled for the root account"
+industry_overlays:
+  default:
+    weight_multiplier: 1.0
+remediation_plain: "Enable MFA on the cloud root account."
+`
+
 const overlayHealthcare = `
 id: healthcare
 display_name: Healthcare
@@ -235,6 +258,93 @@ func TestScore_NoAnswers(t *testing.T) {
 	}
 	if report.OverallScore != 100 {
 		t.Errorf("expected 100 for no answers, got %d", report.OverallScore)
+	}
+}
+
+// setupCloudStores builds stores containing only the CLOUD_ROOT_NO_MFA rule so
+// the C-1 guard can be exercised at the engine level.
+func setupCloudStores(t *testing.T) (*rules.RuleStore, *rules.OverlayStore) {
+	t.Helper()
+	ruleDir := t.TempDir()
+	overlayDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(ruleDir, "CLOUD_ROOT_NO_MFA.yaml"), []byte(ruleCloudRootNoMFA), 0o644); err != nil {
+		t.Fatalf("writeFile rule: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(overlayDir, "technology.yaml"), []byte(overlayDefault), 0o644); err != nil {
+		t.Fatalf("writeFile overlay: %v", err)
+	}
+
+	ruleStore, err := rules.LoadRulesFromDir(ruleDir)
+	if err != nil {
+		t.Fatalf("LoadRulesFromDir: %v", err)
+	}
+	overlayStore, err := rules.LoadOverlaysFromDir(overlayDir)
+	if err != nil {
+		t.Fatalf("LoadOverlaysFromDir: %v", err)
+	}
+	return ruleStore, overlayStore
+}
+
+// TestScore_CloudRuleDoesNotFireWhenUnscanned is the engine-level C-1 regression:
+// a `cloud.root_mfa_enabled == false` rule must NOT fire when ScannerFindings is
+// present but cloud was never scanned (the common CLI path), and MUST fire once a
+// provider has actually been scanned with root MFA off.
+func TestScore_CloudRuleDoesNotFireWhenUnscanned(t *testing.T) {
+	rs, os_ := setupCloudStores(t)
+	engine, err := scoring.NewEngine(rs, os_)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	// Case 1: normal scan — ScannerFindings present, cloud never scanned.
+	// The rule must NOT fire and the score must stay at 100.
+	unscanned := types.ScoringInput{
+		Industry:    "technology",
+		CompanySize: "smb",
+		Answers:     map[string]string{},
+		ScannerFindings: &types.ScannerFindings{
+			Cloud: types.CloudFindings{}, // zero value, no providers scanned
+		},
+	}
+	report, err := engine.Score(unscanned)
+	if err != nil {
+		t.Fatalf("Score (unscanned): %v", err)
+	}
+	if report.OverallScore != 100 {
+		t.Errorf("expected score 100 when cloud was not scanned, got %d", report.OverallScore)
+	}
+	for _, r := range report.TopRisks {
+		if r.RuleID == "CLOUD_ROOT_NO_MFA" {
+			t.Error("CLOUD_ROOT_NO_MFA fired on a scan that never touched cloud (C-1 regression)")
+		}
+	}
+
+	// Case 2: cloud actually scanned with root MFA disabled — the rule MUST fire.
+	scanned := types.ScoringInput{
+		Industry:    "technology",
+		CompanySize: "smb",
+		Answers:     map[string]string{},
+		ScannerFindings: &types.ScannerFindings{
+			Cloud: types.CloudFindings{
+				ProvidersScanned: []string{"aws"},
+				RootMFAEnabled:   false,
+			},
+		},
+	}
+	report2, err := engine.Score(scanned)
+	if err != nil {
+		t.Fatalf("Score (scanned): %v", err)
+	}
+	found := false
+	for _, r := range report2.TopRisks {
+		if r.RuleID == "CLOUD_ROOT_NO_MFA" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected CLOUD_ROOT_NO_MFA to fire when aws was scanned with root MFA off")
 	}
 }
 

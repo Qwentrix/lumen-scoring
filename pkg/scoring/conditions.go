@@ -76,6 +76,25 @@ func scannerFieldValue(key string, sf *types.ScannerFindings) (interface{}, bool
 		domainStruct = sf.SecurityPosture
 	case "privacy":
 		domainStruct = sf.Privacy
+	case "cloud":
+		// ENT-118 cloud findings are opt-in. When no provider was actually scanned,
+		// every field is its zero value (e.g. root_mfa_enabled=false), which would
+		// FALSELY fire `cloud.* == false` rules (CLOUD_ROOT_NO_MFA, CLOUD_NO_AUDIT_LOGGING)
+		// on a normal scan. Treat all cloud fields as "not present" unless a provider
+		// was scanned, so cloud rules fire only when --include-cloud actually ran.
+		//
+		// This guard protects ALL cloud rules regardless of operator, including future
+		// ones — it must live here, not in the rule's `scanner:` list, because scanner
+		// conditions within a rule are OR-ed (engine.go appends to triggeredBy on ANY
+		// match), so a `cloud.scanned == true` guard in the rule list cannot express it.
+		//
+		// ProvidersScanned is the reliable signal: the scanner populates it only for
+		// providers that completed a real scan, so an empty slice means cloud was never
+		// touched and every cloud.* field must read as "not present".
+		if len(sf.Cloud.ProvidersScanned) == 0 {
+			return nil, false
+		}
+		domainStruct = sf.Cloud
 	default:
 		return nil, false
 	}

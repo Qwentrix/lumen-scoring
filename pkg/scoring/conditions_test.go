@@ -287,6 +287,49 @@ func TestScannerFieldValue_BoolField(t *testing.T) {
 	}
 }
 
+// --- scannerFieldValue: cloud opt-in guard (C-1 regression) ---
+
+// When cloud was never scanned (--include-cloud not used), CloudFindings is its
+// zero value: ProvidersScanned is empty and bool fields are false. Resolving
+// cloud.* fields in that state would falsely fire `cloud.* == false` rules, so
+// scannerFieldValue must report the field as not present.
+func TestScannerFieldValue_CloudNotScanned_NotFound(t *testing.T) {
+	sf := &types.ScannerFindings{
+		// Non-nil ScannerFindings, but Cloud is the zero value (no providers scanned).
+		Cloud: types.CloudFindings{},
+	}
+	if _, ok := scannerFieldValue("cloud.root_mfa_enabled", sf); ok {
+		t.Error("expected ok=false for cloud.root_mfa_enabled when no provider was scanned")
+	}
+	if _, ok := scannerFieldValue("cloud.audit_logging_enabled", sf); ok {
+		t.Error("expected ok=false for cloud.audit_logging_enabled when no provider was scanned")
+	}
+}
+
+// When a provider was actually scanned, cloud.* fields resolve normally — even
+// when the value is false — so legitimate `cloud.root_mfa_enabled == false`
+// rules can fire.
+func TestScannerFieldValue_CloudScanned_Resolves(t *testing.T) {
+	sf := &types.ScannerFindings{
+		Cloud: types.CloudFindings{
+			ProvidersScanned: []string{"aws"},
+			RootMFAEnabled:   false,
+		},
+	}
+	val, ok := scannerFieldValue("cloud.root_mfa_enabled", sf)
+	if !ok {
+		t.Fatal("expected ok=true for cloud.root_mfa_enabled when a provider was scanned")
+	}
+	if val.(bool) != false {
+		t.Errorf("expected false, got %v", val)
+	}
+	// A `cloud.root_mfa_enabled == false` rule WOULD fire on this finding.
+	cond := rules.DetectCondition("cloud.root_mfa_enabled == false")
+	if !evalScannerCondition(cond, sf) {
+		t.Error("expected cloud.root_mfa_enabled == false to fire when aws was scanned with MFA off")
+	}
+}
+
 // --- evalScannerCondition ---
 
 func TestEvalScannerCondition_ValidMatch(t *testing.T) {

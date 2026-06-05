@@ -114,6 +114,10 @@ type ScannerFindings struct {
 	SecurityPosture SecurityPostureFindings `json:"security_posture"`
 	// Privacy holds DLP / PII scan outputs.
 	Privacy PrivacyFindings `json:"privacy"`
+	// Cloud holds opt-in cloud-config probe outputs (AWS/Azure/GCP, read-only).
+	// Populated only when the scanner is invoked with --include-cloud and the
+	// user has consented to the "cloud" domain. Zero-value when not enabled.
+	Cloud CloudFindings `json:"cloud"`
 }
 
 // VulnerabilityFindings captures the vulnerability probe results.
@@ -172,6 +176,35 @@ type PrivacyFindings struct {
 	PIIMatchCount int `json:"pii_match_count"`
 	// FilesScannedCount is the total number of files the DLP scanner inspected.
 	FilesScannedCount int `json:"files_scanned_count"`
+}
+
+// CloudFindings captures opt-in cloud-config probe results (ENT-118).
+//
+// These fields are populated only when the scanner is invoked with --include-cloud.
+// All values are read-only counts/booleans — no cloud resource data, no credentials,
+// no PII. Scoring rules reference these fields under the "cloud" domain alias in
+// detect.scanner conditions (e.g. "cloud.public_storage_count > 0").
+//
+// Findings are intentionally mapped into the existing security_posture and
+// compliance domains by the scoring engine (Option B, LU9-BUILD-BLUEPRINT §2)
+// to preserve the 5-domain invariant. The "cloud" prefix in conditions.go's
+// scannerFieldValue switch routes to this struct.
+type CloudFindings struct {
+	// PublicStorageCount is the number of public-readable object-storage buckets (S3).
+	PublicStorageCount int `json:"public_storage_count"`
+	// PublicIngressCount is the number of security-group rules open to 0.0.0.0/0.
+	PublicIngressCount int `json:"public_ingress_count"`
+	// UnencryptedVolumesCount is the number of unencrypted EBS/RDS volumes.
+	UnencryptedVolumesCount int `json:"unencrypted_volumes_count"`
+	// RootMFAEnabled indicates whether root-account MFA is enabled.
+	RootMFAEnabled bool `json:"root_mfa_enabled"`
+	// IAMPasswordPolicyWeak indicates a weak or absent IAM password policy.
+	IAMPasswordPolicyWeak bool `json:"iam_password_policy_weak"`
+	// AuditLoggingEnabled indicates whether CloudTrail or equivalent audit logging is active.
+	AuditLoggingEnabled bool `json:"audit_logging_enabled"`
+	// ProvidersScanned lists the cloud providers successfully scanned (e.g. ["aws"]).
+	// Empty when no cloud scan was run or all providers were skipped (no credentials).
+	ProvidersScanned []string `json:"providers_scanned"`
 }
 
 // FindingResult describes a single triggered rule and its contribution to the score.

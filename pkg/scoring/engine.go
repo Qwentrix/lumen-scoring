@@ -38,7 +38,8 @@ func NewEngine(ruleStore *rules.RuleStore, overlayStore *rules.OverlayStore) (*E
 // Score runs the deterministic scoring algorithm against the provided input
 // and returns a fully populated ReportPayload.
 //
-// The algorithm is documented in docs-2026/assessment-tool/02-design.md §7.
+// The algorithm is documented in docs-2026/assessment-tool/02-design.md §7
+// (internal monorepo) and in docs/METHODOLOGY.md in the public scanner repo.
 // No ML, no randomness. Same input always produces the same output.
 func (e *Engine) Score(input types.ScoringInput) (*types.ReportPayload, error) {
 	overlay := e.overlayStore.ByID(input.Industry)
