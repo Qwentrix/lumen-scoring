@@ -60,7 +60,7 @@ func (e *Engine) Score(input types.ScoringInput) (*types.ReportPayload, error) {
 	domainScores := make(map[types.DomainID]int, len(types.AllDomains))
 
 	for _, domainID := range types.AllDomains {
-		result := computeDomainResult(domainID, triggered)
+		result := computeDomainResult(domainID, triggered, floorLoss(input, domainID))
 		domainResults = append(domainResults, result)
 		domainScores[domainID] = result.Score
 	}
@@ -200,10 +200,12 @@ func evaluateDetect(rule *rules.FindingRule, input types.ScoringInput) []string 
 }
 
 // computeDomainResult builds a DomainResult from the set of triggered findings
-// for a single domain.
+// for a single domain. floor is the minimum loss for this domain (from floorLoss);
+// pass 0 to get the original full-assessment behaviour.
 func computeDomainResult(
 	domainID types.DomainID,
 	triggered map[string]types.FindingResult,
+	floor float64,
 ) types.DomainResult {
 	var domainFindings []types.FindingResult
 	for _, f := range triggered {
@@ -221,6 +223,9 @@ func computeDomainResult(
 		rawLoss += f.Contribution
 	}
 	cappedLoss := math.Min(1.0, rawLoss)
+	if floor > cappedLoss {
+		cappedLoss = floor
+	}
 	score := int(math.Round(100.0 * (1.0 - cappedLoss)))
 	grade := types.Grade(score)
 
@@ -240,9 +245,13 @@ func computeDomainResult(
 		})
 	}
 
+	formula := "100 * (1 - min(1.0, Σ contributions))"
+	if floor > 0 {
+		formula = "100 * (1 - max(floor, min(1.0, Σ contributions)))"
+	}
 	explain := types.DomainExplain{
 		DomainID:    domainID,
-		Formula:     "100 * (1 - min(1.0, Σ contributions))",
+		Formula:     formula,
 		Steps:       steps,
 		RawLoss:     rawLoss,
 		CappedLoss:  cappedLoss,
@@ -257,6 +266,29 @@ func computeDomainResult(
 		Findings:     domainFindings,
 		Explain:      explain,
 	}
+}
+
+// floorLoss returns floor*(1-answered/total) for a domain, or 0 when no floor/coverage.
+// It is used by the spine/preliminary funnel path to prevent sparse answer sets from
+// scoring falsely high. When DomainCoverage or Floors is nil the function returns 0,
+// making the full-assessment path byte-for-byte unchanged.
+func floorLoss(input types.ScoringInput, d types.DomainID) float64 {
+	f, ok := input.Floors[d]
+	if !ok || f <= 0 {
+		return 0
+	}
+	cov, ok := input.DomainCoverage[d]
+	if !ok || cov.Total <= 0 {
+		return 0
+	}
+	frac := float64(cov.Answered) / float64(cov.Total)
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	return f * (1 - frac)
 }
 
 // computeOverallScore computes the overall weighted-mean score across all five domains.

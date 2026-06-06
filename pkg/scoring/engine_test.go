@@ -348,6 +348,51 @@ func TestScore_CloudRuleDoesNotFireWhenUnscanned(t *testing.T) {
 	}
 }
 
+// ruleQFire is a compliance rule used by the floor tests.
+// Q-FIRE == bad fires a critical finding with default_weight=0.5.
+// contribution = 0.5 (weight) × 1.0 (industry) × 1.0 (critical severity factor) = 0.5.
+const ruleQFire = `
+id: Q-FIRE
+domain: compliance
+severity: critical
+default_weight: 0.5
+detect:
+  questionnaire:
+    - Q-FIRE == bad
+title: "Floor test compliance rule"
+description_short: "Test compliance rule"
+remediation_plain: "Fix the compliance issue."
+`
+
+// newTestEngine builds a minimal Engine with a single compliance rule (Q-FIRE) and
+// the default technology overlay (all multipliers 1.0). Used by floor_test.go.
+func newTestEngine(t *testing.T) *scoring.Engine {
+	t.Helper()
+	ruleDir := t.TempDir()
+	overlayDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(ruleDir, "Q-FIRE.yaml"), []byte(ruleQFire), 0o644); err != nil {
+		t.Fatalf("newTestEngine: write rule: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(overlayDir, "technology.yaml"), []byte(overlayDefault), 0o644); err != nil {
+		t.Fatalf("newTestEngine: write overlay: %v", err)
+	}
+
+	rs, err := rules.LoadRulesFromDir(ruleDir)
+	if err != nil {
+		t.Fatalf("newTestEngine: LoadRulesFromDir: %v", err)
+	}
+	os_, err := rules.LoadOverlaysFromDir(overlayDir)
+	if err != nil {
+		t.Fatalf("newTestEngine: LoadOverlaysFromDir: %v", err)
+	}
+	engine, err := scoring.NewEngine(rs, os_)
+	if err != nil {
+		t.Fatalf("newTestEngine: NewEngine: %v", err)
+	}
+	return engine
+}
+
 func TestScore_AssessmentIDPassthrough(t *testing.T) {
 	rs, os_ := setupStores(t)
 	engine, _ := scoring.NewEngine(rs, os_)

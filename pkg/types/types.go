@@ -98,6 +98,19 @@ type ScoringInput struct {
 	// ScannerFindings holds structured outputs from the local scanner probes.
 	// If nil, only the questionnaire path is evaluated.
 	ScannerFindings *ScannerFindings `json:"scanner_findings,omitempty"`
+	// DomainCoverage is the per-domain (answered,total) triage counts for the spine/preliminary
+	// path. Nil → no floor; scoring identical to the full-assessment behaviour.
+	DomainCoverage map[DomainID]DomainCoverage `json:"-"`
+	// Floors is the per-domain unanswered-loss floor (0..1).
+	Floors map[DomainID]float64 `json:"-"`
+}
+
+// DomainCoverage holds how many of a domain's triage questions were answered.
+// The json tags are used by lumen-api session persistence (not by ScoringInput serialization),
+// so they are intentional even though ScoringInput.DomainCoverage itself is tagged json:"-".
+type DomainCoverage struct {
+	Answered int `json:"answered"`
+	Total    int `json:"total"`
 }
 
 // ScannerFindings contains structured probe outputs from the lumen scanner CLI.
@@ -269,7 +282,7 @@ type DomainExplain struct {
 	Steps []ExplainStep `json:"steps"`
 	// RawLoss is the sum of all contributions before capping.
 	RawLoss float64 `json:"raw_loss"`
-	// CappedLoss is min(1.0, RawLoss).
+	// CappedLoss is the loss actually applied to the score: max(floor, min(1.0, RawLoss)).
 	CappedLoss float64 `json:"capped_loss"`
 	// DomainScore is round(100 * (1 - CappedLoss)).
 	DomainScore int `json:"domain_score"`
